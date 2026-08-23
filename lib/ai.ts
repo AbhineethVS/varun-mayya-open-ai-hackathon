@@ -21,7 +21,7 @@ export async function getAiAssistance(kind: AiKind, locale: Locale, safetyIdenti
       : `Translate this factual synthetic-prototype message into ${languageNames[locale]}. Keep numbers and the terms EPF and EPS unchanged: ${fallback.translate}`;
   try {
     const response = await client.responses.create({
-      model: process.env.OPENAI_MODEL || "gpt-5.6-terra",
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
       instructions: "You are an accessibility assistant inside an independent public-service prototype. Use only supplied facts. Never provide legal advice, invent policy, calculate money, or claim to access EPFO. Return valid JSON matching the schema.",
       input: prompt,
       reasoning: { effort: "low" },
