@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       text: getFallback(parsed.data.kind),
       source: "fallback",
-      notice: "The private demo session is still being prepared.",
+      reason: "session_pending",
     }, { headers: { "Cache-Control": "no-store" } });
   }
   if (!allowRequest(`ai:${session.userId}`)) return NextResponse.json({ error: "Please wait a minute before another AI request." }, { status: 429 });

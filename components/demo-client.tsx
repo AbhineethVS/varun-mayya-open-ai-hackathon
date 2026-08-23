@@ -25,6 +25,7 @@ export function DemoClient() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [aiText, setAiText] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [loginBusy, setLoginBusy] = useState(false);
   const [docPreview, setDocPreview] = useState<EvidenceId | null>(null);
   const [remoteCaseId, setRemoteCaseId] = useState<string | null>(null);
   const [persistence, setPersistence] = useState<"local" | "syncing" | "cloud" | "offline">("local");
@@ -95,11 +96,19 @@ export function DemoClient() {
     setCaseData(fresh); setAiText(null); window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
   }
 
-  function login() {
+  async function login() {
     if (uan.replace(/\s/g, "") !== DEMO_UAN.replace(/\s/g, "")) { setError("Use the displayed fictional UAN to continue."); return; }
     if (!otpSent) { setOtpSent(true); setError(""); return; }
     if (otp !== DEMO_OTP) { setError("Use the displayed fictional demo code."); return; }
-    setLoggedIn(true); setError("");
+    setLoginBusy(true); setError("");
+    try {
+      await ensureDemoSession();
+      setLoggedIn(true);
+    } catch {
+      setError("We could not create the private demo session. Confirm Anonymous Sign-Ins is enabled in Supabase, then try again.");
+    } finally {
+      setLoginBusy(false);
+    }
   }
 
   function transition(action: Parameters<typeof nextStatus>[1], event: TimelineEvent) {
@@ -116,10 +125,12 @@ export function DemoClient() {
     try {
       const response = await fetch("/api/ai", { method: "POST", headers: await requestHeaders(), body: JSON.stringify({ kind, locale, caseId: CASE_ID }) });
       if (!response.ok) throw new Error("AI assistance unavailable");
-      const payload = await response.json() as { text: string; source: string; reason?: "missing_api_key" | "provider_error" };
+      const payload = await response.json() as { text: string; source: string; reason?: "missing_api_key" | "provider_error" | "session_pending" };
       const sourceNote = payload.source === "fallback"
         ? payload.reason === "missing_api_key"
           ? "Shown from the built-in safe fallback because OPENAI_API_KEY is not configured in this Vercel deployment."
+          : payload.reason === "session_pending"
+            ? "Shown from the built-in safe fallback while the private demo session is being prepared. Try the live AI action again in a moment."
           : "Shown from the built-in safe fallback because the configured OpenAI request did not complete. Check the Vercel Runtime Logs for the provider error."
         : "Generated from the configured AI service.";
       setAiText(`${payload.text}\n\n${sourceNote}`);
@@ -153,7 +164,16 @@ export function DemoClient() {
     return headers;
   }
 
-  if (!loggedIn) return <LoginScreen locale={locale} setLocale={setLocale} t={t} uan={uan} setUan={setUan} otp={otp} setOtp={setOtp} otpSent={otpSent} login={login} error={error} />;
+  async function ensureDemoSession() {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const { data: existing } = await supabase.auth.getSession();
+    if (existing.session) return;
+    const { error: signInError } = await supabase.auth.signInAnonymously();
+    if (signInError) throw signInError;
+  }
+
+  if (!loggedIn) return <LoginScreen locale={locale} setLocale={setLocale} t={t} uan={uan} setUan={setUan} otp={otp} setOtp={setOtp} otpSent={otpSent} login={login} loginBusy={loginBusy} error={error} />;
 
   return (
     <main className="app-shell">
@@ -179,8 +199,8 @@ export function DemoClient() {
   );
 }
 
-function LoginScreen({ locale, setLocale, t, uan, setUan, otp, setOtp, otpSent, login, error }: { locale: Locale; setLocale: (value: Locale) => void; t: typeof copy.en; uan: string; setUan: (value: string) => void; otp: string; setOtp: (value: string) => void; otpSent: boolean; login: () => void; error: string }) {
-  return <main className="login-shell"><header className="app-header"><Link href="/" className="brand"><span className="brand-mark">R</span><span>EPFO Resolve</span></Link><LocalePicker locale={locale} setLocale={setLocale} /></header><section className="login-card"><div className="icon-orb"><LockKeyhole size={25} /></div><div className="eyebrow">{t.synthetic}</div><h1>Open Ananya’s fictional case</h1><p>This is a mock sign-in. It creates an isolated demo session; it does not verify a real identity.</p><div className="demo-credentials"><span>Fictional UAN</span><strong>{DEMO_UAN}</strong>{otpSent && <><span>Fictional OTP</span><strong>{DEMO_OTP}</strong></>}</div><label>UAN <input inputMode="numeric" placeholder="Enter fictional UAN" value={uan} onChange={(event) => setUan(event.target.value)} /></label>{otpSent && <label>One-time password <input inputMode="numeric" placeholder="Enter fictional OTP" value={otp} onChange={(event) => setOtp(event.target.value)} /></label>}{error && <p className="form-error"><AlertTriangle size={16} />{error}</p>}<button className="button primary full" onClick={login}>{otpSent ? "Verify and continue" : "Send fictional OTP"} <ArrowRight size={17} /></button><p className="small-note"><ShieldCheck size={15} /> Do not enter real UAN, Aadhaar, PAN, OTP, bank, or employer details.</p></section></main>;
+function LoginScreen({ locale, setLocale, t, uan, setUan, otp, setOtp, otpSent, login, loginBusy, error }: { locale: Locale; setLocale: (value: Locale) => void; t: typeof copy.en; uan: string; setUan: (value: string) => void; otp: string; setOtp: (value: string) => void; otpSent: boolean; login: () => Promise<void>; loginBusy: boolean; error: string }) {
+  return <main className="login-shell"><header className="app-header"><Link href="/" className="brand"><span className="brand-mark">R</span><span>EPFO Resolve</span></Link><LocalePicker locale={locale} setLocale={setLocale} /></header><section className="login-card"><div className="icon-orb"><LockKeyhole size={25} /></div><div className="eyebrow">{t.synthetic}</div><h1>Open Ananya’s fictional case</h1><p>This is a mock sign-in. It creates an isolated demo session; it does not verify a real identity.</p><div className="demo-credentials"><span>Fictional UAN</span><strong>{DEMO_UAN}</strong>{otpSent && <><span>Fictional OTP</span><strong>{DEMO_OTP}</strong></>}</div><label>UAN <input inputMode="numeric" placeholder="Enter fictional UAN" value={uan} onChange={(event) => setUan(event.target.value)} /></label>{otpSent && <label>One-time password <input inputMode="numeric" placeholder="Enter fictional OTP" value={otp} onChange={(event) => setOtp(event.target.value)} /></label>}{error && <p className="form-error"><AlertTriangle size={16} />{error}</p>}<button className="button primary full" onClick={() => void login()} disabled={loginBusy}>{loginBusy ? "Creating private demo session…" : otpSent ? "Verify and continue" : "Send fictional OTP"} <ArrowRight size={17} /></button><p className="small-note"><ShieldCheck size={15} /> Do not enter real UAN, Aadhaar, PAN, OTP, bank, or employer details.</p></section></main>;
 }
 
 function Dashboard({ t, onContinue }: { t: typeof copy.en; onContinue: () => void }) {
