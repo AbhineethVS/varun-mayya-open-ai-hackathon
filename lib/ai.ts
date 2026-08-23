@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { Locale } from "@/lib/locales";
 
 export type AiKind = "explain" | "draft" | "translate";
+export type AiResult = { text: string; source: "live" | "fallback"; reason?: "missing_api_key" | "provider_error" };
 
 const fallback: Record<AiKind, string> = {
   explain: "Your old employer’s fictional record says EPS was active. But this demo case starts after 1 September 2014, has no earlier EPS membership, and uses ₹18,500 Basic + DA. The historical EPS entry needs correction before the PF transfer can continue. The total balance is being reconciled, not lost.",
@@ -12,7 +13,7 @@ const fallback: Record<AiKind, string> = {
 const languageNames: Record<Locale, string> = { en: "English", hi: "Hindi", bn: "Bengali", gu: "Gujarati", kn: "Kannada", mr: "Marathi", ta: "Tamil", te: "Telugu" };
 
 export async function getAiAssistance(kind: AiKind, locale: Locale, safetyIdentifier: string) {
-  if (!process.env.OPENAI_API_KEY) return { text: fallback[kind], source: "fallback" as const };
+  if (!process.env.OPENAI_API_KEY) return { text: fallback[kind], source: "fallback" as const, reason: "missing_api_key" as const } satisfies AiResult;
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const prompt = kind === "explain"
     ? "Explain the following verified fictional case in plain language. Do not offer legal advice or alter the conclusion: first EPF membership 04 Jan 2017; Basic + DA ₹18,500; no prior EPS membership; former employer recorded EPS active and ₹48,200 diverted."
@@ -45,9 +46,13 @@ export async function getAiAssistance(kind: AiKind, locale: Locale, safetyIdenti
     });
     const parsed = JSON.parse(response.output_text) as { text?: string };
     if (!parsed.text) throw new Error("AI returned no text");
-    return { text: parsed.text, source: "live" as const };
-  } catch {
-    return { text: fallback[kind], source: "fallback" as const };
+    return { text: parsed.text, source: "live" as const } satisfies AiResult;
+  } catch (error) {
+    console.error("EPFO Resolve OpenAI request failed", {
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+      message: error instanceof Error ? error.message : "Unknown provider error",
+    });
+    return { text: fallback[kind], source: "fallback" as const, reason: "provider_error" as const } satisfies AiResult;
   }
 }
 

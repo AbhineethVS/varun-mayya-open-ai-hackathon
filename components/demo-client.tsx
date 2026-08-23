@@ -116,8 +116,13 @@ export function DemoClient() {
     try {
       const response = await fetch("/api/ai", { method: "POST", headers: await requestHeaders(), body: JSON.stringify({ kind, locale, caseId: CASE_ID }) });
       if (!response.ok) throw new Error("AI assistance unavailable");
-      const payload = await response.json() as { text: string; source: string };
-      setAiText(`${payload.text}\n\n${payload.source === "fallback" ? "Shown from the built-in safe fallback." : "Generated from the configured AI service."}`);
+      const payload = await response.json() as { text: string; source: string; reason?: "missing_api_key" | "provider_error" };
+      const sourceNote = payload.source === "fallback"
+        ? payload.reason === "missing_api_key"
+          ? "Shown from the built-in safe fallback because OPENAI_API_KEY is not configured in this Vercel deployment."
+          : "Shown from the built-in safe fallback because the configured OpenAI request did not complete. Check the Vercel Runtime Logs for the provider error."
+        : "Generated from the configured AI service.";
+      setAiText(`${payload.text}\n\n${sourceNote}`);
       const supabase = getSupabaseBrowserClient();
       if (supabase && remoteCaseId && (payload.source === "live" || payload.source === "fallback")) {
         void persistAiArtifact(supabase, remoteCaseId, kind, payload.source, payload.text);
