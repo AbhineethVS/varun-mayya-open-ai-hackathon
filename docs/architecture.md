@@ -9,8 +9,10 @@ The web application is Next.js on Vercel. It is designed to use Supabase anonymo
 1. A visitor sees an explicit mock UAN/OTP screen and creates a synthetic session.
 2. The deterministic state machine controls every workflow transition; AI never receives authority over it.
 3. The case event history and selected evidence are persisted per session. The included Supabase migration creates `cases`, `case_events`, `evidence_selections`, and `ai_artifacts`, with row-level security keyed to `auth.uid()`.
-4. The AI route validates a fixed action, locale, and scenario key, then uses only a server-held key and whitelisted facts. With Supabase configured, protected endpoints require that anonymous session’s bearer token. AI actions are also limited per session in the running instance. It returns built-in copy on any AI failure.
-5. The PDF endpoint validates the synthetic case shape, requires the same session when cloud persistence is configured, and renders a no-store resolution summary.
+4. The AI route validates a fixed action, locale, and scenario key, then uses only a server-held key and whitelisted facts. With Supabase configured, protected endpoints require that anonymous session’s bearer token. AI is limited to 10 requests per minute per session/IP fingerprint; it returns built-in copy on any AI failure.
+5. The PDF endpoint validates the synthetic case shape, requires the same session when cloud persistence is configured, is limited to 6 requests per minute per session/IP fingerprint, and renders a no-store resolution summary.
+
+The application limiter is intentionally dependency-free and instance-local for this hackathon deployment. Before materially higher traffic, replace it with a shared rate-limit store (for example, Redis) so limits remain global across serverless instances.
 
 ## Production cutover
 
