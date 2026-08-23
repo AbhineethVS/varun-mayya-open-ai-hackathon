@@ -9,7 +9,7 @@ export default function Home() {
         <div className="eyebrow">A clearer route through a stuck PF transfer</div>
         <h1>Know what is wrong.<br /><em>Know who must act.</em></h1>
         <p className="hero-copy">EPFO Resolve guides a fictional employee through an incorrect EPS record, an unresponsive former employer, and a blocked PF transfer—without losing the case history.</p>
-        <div className="hero-actions"><Link className="button primary" href="/demo">Start the synthetic demo <ArrowRight size={18} /></Link><a className="button secondary" href="#how-it-works">How it works</a></div>
+        <div className="hero-actions"><Link className="button primary" href="/demo">Start the synthetic demo <ArrowRight size={18} /></Link><Link className="button secondary" href="/review">Review the full case</Link><a className="button secondary" href="#how-it-works">How it works</a></div>
         <p className="safety-note"><ShieldCheck size={17} /> No real UAN, OTP, passbook, bank, Aadhaar, or employer data is requested.</p>
       </section>
       <section id="how-it-works" className="landing-grid">

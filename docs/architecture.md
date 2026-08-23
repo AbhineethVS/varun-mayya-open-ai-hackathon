@@ -12,6 +12,10 @@ The web application is Next.js on Vercel. It is designed to use Supabase anonymo
 4. The AI route validates a fixed action, locale, and scenario key, then uses only a server-held key and whitelisted facts. With Supabase configured, protected endpoints require that anonymous session’s bearer token. AI is limited to 10 requests per minute per session/IP fingerprint; it returns built-in copy on any AI failure.
 5. The PDF endpoint validates the synthetic case shape, requires the same session when cloud persistence is configured, is limited to 6 requests per minute per session/IP fingerprint, and renders a no-store resolution summary.
 
+## Public evaluator surface
+
+`/review` is a server-rendered, no-auth walkthrough of the complete synthetic case. It imports the same case constants as the interactive app but does not initialize Supabase, invoke AI, or write any data. `/robots.txt`, `/sitemap.xml`, and `/llms.txt` direct automated evaluators to that readable route; the interaction-gated `/demo` is intentionally excluded from the sitemap.
+
 The application limiter is intentionally dependency-free and instance-local for this hackathon deployment. Before materially higher traffic, replace it with a shared rate-limit store (for example, Redis) so limits remain global across serverless instances.
 
 ## Production cutover

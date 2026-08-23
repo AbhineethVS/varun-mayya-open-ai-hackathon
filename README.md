@@ -18,7 +18,7 @@ Open `http://localhost:3000`, then use the displayed fictional UAN and OTP. Neve
 
 ## Production configuration
 
-Copy `.env.example` to `.env.local`. Add `OPENAI_API_KEY` to enable live optional AI text; otherwise the safe deterministic fallback is used. Add the public Supabase URL and anon key, enable Anonymous Sign-Ins, and apply `supabase/migrations/001_epfo_resolve.sql` to make each mock-login session private and durable. The app deliberately works without credentials so reviewers can always complete the synthetic journey locally.
+Copy `.env.example` to `.env.local`. Add `OPENAI_API_KEY` to enable live optional AI text; otherwise the safe deterministic fallback is used. Add the public Supabase URL and anon key, enable Anonymous Sign-Ins, and apply `supabase/migrations/001_epfo_resolve.sql` to make each mock-login session private and durable. The app deliberately works without credentials so reviewers can always complete the synthetic journey locally. Optionally set `NEXT_PUBLIC_SITE_URL` when deploying to a custom domain; it defaults to `https://epfo-resolve.vercel.app`.
 
 ## Guardrails
 
@@ -27,4 +27,4 @@ Copy `.env.example` to `.env.local`. Add `OPENAI_API_KEY` to enable live optiona
 - AI receives a whitelist of fictional facts and cannot determine EPS eligibility, balances, state transitions, or escalation.
 - Rule context: [EPFO FAQ](https://www.epfindia.gov.in/site_en/FAQ.php) and [EPFO Citizen Charter](https://www.epfindia.gov.in/site_docs/PDFs/MiscPDFs/CitizenCharter.pdf).
 
-See [architecture notes](docs/architecture.md), [research notes](docs/research.md), and [demo script](docs/demo-script.md).
+For evaluation without interacting with the mock login, use the public `/review` route. See [architecture notes](docs/architecture.md), [research notes](docs/research.md), and [demo script](docs/demo-script.md).
