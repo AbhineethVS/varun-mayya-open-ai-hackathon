@@ -3,18 +3,18 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Bot, Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, Download, FileText, Landmark, Languages, LoaderCircle, LockKeyhole, Menu, RefreshCcw, Scale, Send, ShieldCheck, Sparkles, X } from "lucide-react";
-import { CASE_ID, createDemoCase, DemoCase, EVIDENCE, EvidenceId, formatRupees, hasRequiredEvidence, LEDGER, nextStatus, TimelineEvent, WORKFLOW_STEPS } from "@/lib/domain";
+import { CASE_ID, createDemoCase, DemoCase, EVIDENCE, EvidenceId, formatRupees, hasRequiredEvidence, LEDGER, WORKFLOW_STEPS } from "@/lib/domain";
 import { copy, Locale, locales } from "@/lib/locales";
 import { bootstrapCase, persistAiArtifact, persistCase } from "@/lib/case-persistence";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { WorkflowAction } from "@/lib/workflow";
+import { VoiceGuide } from "@/components/voice-guide";
 
 const STORAGE_KEY = "epfo-resolve-case-v1";
 const DEMO_UAN = "1000 2000 3000";
 const DEMO_OTP = "123456";
 type AiKind = "explain" | "draft" | "translate";
 type ConfirmAction = { label: string; description: string; action: () => void };
-
-const eventFor = (id: string, title: string, description: string, actor: TimelineEvent["actor"], tone: TimelineEvent["tone"]): TimelineEvent => ({ id, date: "22 Aug 2026", title, description, actor, tone });
 
 function journeyStage(status: DemoCase["status"]) {
   if (status === "transfer_failed") return 1;
@@ -142,10 +142,21 @@ export function DemoClient() {
     } finally { setLoginBusy(false); }
   }
 
-  function transition(action: Parameters<typeof nextStatus>[1], event: TimelineEvent) {
-    updateCase((previous) => ({ ...previous, status: nextStatus(previous.status, action), events: [...previous.events, event] }));
-    setAnnouncement(`${event.title}. ${event.description}`);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  async function transition(action: WorkflowAction, evidenceIds?: EvidenceId[]) {
+    try {
+      const response = await fetch("/api/workflow", { method: "POST", headers: await requestHeaders(), body: JSON.stringify({ caseData, action, evidenceIds }) });
+      const payload = await response.json() as { caseData?: DemoCase; error?: string };
+      if (!response.ok || !payload.caseData) throw new Error(payload.error || "The fictional action is unavailable.");
+      setCaseData(payload.caseData);
+      const latest = payload.caseData.events.at(-1);
+      setAnnouncement(latest ? `${latest.title}. ${latest.description}` : "The fictional evidence selection was updated.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return true;
+    } catch (caught) {
+      setAiText(caught instanceof Error ? caught.message : "That fictional action is unavailable.");
+      setAnnouncement("That fictional action is unavailable.");
+      return false;
+    }
   }
 
   function toggleEvidence(id: EvidenceId) {
@@ -234,17 +245,18 @@ export function DemoClient() {
     <div className="app-content">
       <aside className="side-rail"><CaseIdentity /><nav className="side-nav" aria-label="Case journey"><NavItem label="Transfer" active /><NavItem label="Diagnosis" active={statusIndex >= 1} /><NavItem label="Evidence" active={statusIndex >= 2} /><NavItem label="Resolution" active={statusIndex >= 5} /></nav><button className="text-button" type="button" onClick={reset}><RefreshCcw size={15} /> {t.reset}</button></aside>
       <section className="main-panel panel-enter" key={caseData.status} aria-label="Current case step">
-        {caseData.status === "transfer_failed" && <Dashboard t={t} onContinue={() => transition("diagnose", eventFor("diagnosed", "Mismatch explained", "The EPS conflict is now explained in plain language with the source used for this fictional assessment.", "EPFO Resolve", "accent"))} />}
-        {caseData.status === "diagnosed" && <Diagnosis t={t} onContinue={() => transition("save_evidence", eventFor("evidence-ready", "Evidence checklist opened", "The required fictional documents are ready to review and attach to this case.", "EPFO Resolve", "neutral"))} onAi={askAi} aiBusy={aiBusy} aiText={aiText} onDismissAi={() => setAiText(null)} />}
-        {caseData.status === "evidence_ready" && <EvidenceScreen t={t} selected={caseData.selectedEvidence} requiredSelected={requiredSelected} onToggle={toggleEvidence} onPreview={setDocPreview} onContinue={() => transition("submit", eventFor("submitted", "Correction request submitted", "A complete simulated correction request was sent to Northstar Services with a proposed seven-business-day response target.", "You", "accent"))} />}
-        {caseData.status === "correction_submitted" && <TimelineScreen t={t} caseData={caseData} title="Request sent. Northstar now owns the next action." detail="The response target shown below is a proposed product deadline, not an EPFO statutory employer SLA." actionLabel="Simulate missed deadline" onActionRequested={() => setConfirmAction({ label: "Simulate missed deadline", description: "This will instantly move the fictional timeline past the proposed seven-business-day target. It will not contact Northstar Services or EPFO.", action: () => transition("expire", eventFor("overdue", "Employer deadline missed", "Northstar did not respond by the proposed deadline. Your case and evidence remain intact.", "Northstar Services", "warning")) })} />}
-        {caseData.status === "employer_overdue" && <TimelineScreen t={t} caseData={caseData} title="The former employer did not respond." detail="EPFO Resolve proposes a direct RPFC review route rather than asking you to begin another grievance from scratch." actionLabel="Escalate to simulated RPFC review" onActionRequested={() => setConfirmAction({ label: "Open simulated RPFC review", description: "This will create the next fictional audit event using the evidence already selected. It will not submit a real grievance or contact EPFO.", action: () => transition("escalate", eventFor("escalated", "Proposed RPFC review opened", "The fictional EPFO review path received the same correction request, evidence and event history.", "RPFC review", "accent")) })} />}
-        {caseData.status === "escalated" && <Reconciliation onContinue={() => transition("reconcile", eventFor("reconciled", "Ledger reconciled", "The incorrect simulated EPS diversion was reclassified to EPF. The total balance is unchanged.", "RPFC review", "success"))} />}
-        {caseData.status === "reconciled" && <Success t={t} caseData={caseData} onComplete={() => transition("complete", eventFor("completed", "Transfer completed", "The fictional old account is now zero and the full reconciled amount appears under Riverline Technologies.", "EPFO Resolve", "success"))} onDownload={downloadSummary} downloadBusy={downloadBusy} />}
+        {caseData.status === "transfer_failed" && <Dashboard t={t} onContinue={() => void transition("diagnose")} />}
+        {caseData.status === "diagnosed" && <Diagnosis t={t} onContinue={() => void transition("save_evidence")} onAi={askAi} aiBusy={aiBusy} aiText={aiText} onDismissAi={() => setAiText(null)} />}
+        {caseData.status === "evidence_ready" && <EvidenceScreen t={t} selected={caseData.selectedEvidence} requiredSelected={requiredSelected} onToggle={toggleEvidence} onPreview={setDocPreview} onContinue={() => void transition("submit")} />}
+        {caseData.status === "correction_submitted" && <TimelineScreen t={t} caseData={caseData} title="Request sent. Northstar now owns the next action." detail="The response target shown below is a proposed product deadline, not an EPFO statutory employer SLA." actionLabel="Simulate missed deadline" onActionRequested={() => setConfirmAction({ label: "Simulate missed deadline", description: "This will instantly move the fictional timeline past the proposed seven-business-day target. It will not contact Northstar Services or EPFO.", action: () => { void transition("expire"); } })} />}
+        {caseData.status === "employer_overdue" && <TimelineScreen t={t} caseData={caseData} title="The former employer did not respond." detail="EPFO Resolve proposes a direct RPFC review route rather than asking you to begin another grievance from scratch." actionLabel="Escalate to simulated RPFC review" onActionRequested={() => setConfirmAction({ label: "Open simulated RPFC review", description: "This will create the next fictional audit event using the evidence already selected. It will not submit a real grievance or contact EPFO.", action: () => { void transition("escalate"); } })} />}
+        {caseData.status === "escalated" && <Reconciliation onContinue={() => void transition("reconcile")} />}
+        {caseData.status === "reconciled" && <Success t={t} caseData={caseData} onComplete={() => void transition("complete")} onDownload={downloadSummary} downloadBusy={downloadBusy} />}
         {caseData.status === "transfer_completed" && <Success t={t} caseData={caseData} complete onDownload={downloadSummary} downloadBusy={downloadBusy} />}
       </section>
     </div>
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
+    <VoiceGuide locale={locale} caseData={caseData} requestHeaders={requestHeaders} onWorkflow={transition} onLocale={setLocale} onDownload={downloadSummary} onAnnouncement={setAnnouncement} />
     {docPreview && <DocumentPreview item={EVIDENCE.find((item) => item.id === docPreview)!} close={() => setDocPreview(null)} />}
     {confirmAction && <ConfirmationDialog label={confirmAction.label} description={confirmAction.description} onCancel={() => setConfirmAction(null)} onConfirm={() => { confirmAction.action(); setConfirmAction(null); }} />}
   </main>;

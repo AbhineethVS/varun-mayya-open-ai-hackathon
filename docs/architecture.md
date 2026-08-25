@@ -7,10 +7,11 @@ The web application is Next.js on Vercel. It is designed to use Supabase anonymo
 ## Data flow
 
 1. A visitor sees an explicit mock UAN/OTP screen and creates a synthetic session.
-2. The deterministic state machine controls every workflow transition; AI never receives authority over it.
+2. The deterministic state machine controls every workflow transition. Both visible controls and the optional voice guide use the validated `/api/workflow` route; AI never receives authority over it.
 3. The case event history and selected evidence are persisted per session. The included Supabase migration creates `cases`, `case_events`, `evidence_selections`, and `ai_artifacts`, with row-level security keyed to `auth.uid()`.
 4. The AI route validates a fixed action, locale, and scenario key, then uses only a server-held key and whitelisted facts. With Supabase configured, protected endpoints require that anonymous session’s bearer token. AI is limited to 10 requests per minute per session/IP fingerprint; it returns built-in copy on any AI failure.
 5. The PDF endpoint validates the synthetic case shape, requires the same session when cloud persistence is configured, is limited to 6 requests per minute per session/IP fingerprint, and renders a no-store resolution summary.
+6. The optional push-to-talk guide records at most 15 seconds in the browser after an explicit microphone press. `/api/voice/turn` transcribes the short clip with Sarvam, supplies only whitelisted synthetic case facts to a constrained chat request, and optionally returns Bulbul speech. Audio and transcripts are not written to browser storage, Supabase, or application logs. Voice turns are limited to 10 per minute per session/IP fingerprint; changing case state or downloading a PDF requires an explicit spoken or on-screen confirmation.
 
 ## Public evaluator surface
 
@@ -22,6 +23,6 @@ The application limiter is intentionally dependency-free and instance-local for 
 
 1. Create a Supabase project and enable anonymous sign-ins.
 2. Run `supabase/migrations/001_epfo_resolve.sql` in the SQL editor.
-3. Set the Supabase and OpenAI environment variables in Vercel.
+3. Set the Supabase and OpenAI environment variables in Vercel. Add the server-only `SARVAM_*` variables to enable voice; the demo remains usable without them.
 4. The included client persistence adapter will automatically create an anonymous session and synchronize the synthetic case. Browser storage remains the no-configuration/offline fallback.
 5. Test in an incognito browser and make sure every visible simulation disclosure remains present.
