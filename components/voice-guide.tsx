@@ -15,6 +15,7 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
   const [turn, setTurn] = useState<Turn | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState("");
+  const [speechNotice, setSpeechNotice] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
@@ -25,7 +26,7 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
 
   async function start() {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { setError("Voice input is not supported in this browser. The regular demo controls are still available."); setStatus("error"); return; }
-    setError(""); setTurn(null); player.current?.pause();
+    setError(""); setSpeechNotice(""); setTurn(null); player.current?.pause();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
@@ -67,17 +68,17 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
   async function requestSpeech(text: string, replyLocale: Locale) {
     try {
       const response = await fetch("/api/voice/speak", { method: "POST", headers: await requestHeaders(), body: JSON.stringify({ text, locale: replyLocale }) });
-      const speech = await response.json() as Pick<Turn, "audioBase64" | "audioMimeType">;
-      if (!response.ok || !speech.audioBase64) return;
+      const speech = await response.json() as Pick<Turn, "audioBase64" | "audioMimeType"> & { error?: string };
+      if (!response.ok || !speech.audioBase64) { setSpeechNotice(speech.error || "Spoken reply is unavailable. The written answer is ready."); return; }
       setTurn((previous) => previous ? { ...previous, ...speech } : previous);
       play(speech);
-    } catch { /* Text remains available even when optional speech generation fails. */ }
+    } catch { setSpeechNotice("Spoken reply is unavailable. The written answer is ready."); }
   }
 
-  function play(payload: Pick<Turn, "audioBase64" | "audioMimeType">) {
+  function play(payload: Pick<Turn, "audioBase64" | "audioMimeType">, fromTap = false) {
     player.current?.pause();
     if (!payload.audioBase64 || !payload.audioMimeType) { setStatus("idle"); return; }
-    const audio = new Audio(`data:${payload.audioMimeType};base64,${payload.audioBase64}`); player.current = audio; audio.onended = () => setStatus("idle"); audio.onerror = () => setStatus("idle"); void audio.play().then(() => setStatus("speaking")).catch(() => setStatus("idle"));
+    const audio = new Audio(`data:${payload.audioMimeType};base64,${payload.audioBase64}`); player.current = audio; audio.onended = () => setStatus("idle"); audio.onerror = () => { setStatus("idle"); setSpeechNotice("Audio playback failed. Tap play to try again."); }; void audio.play().then(() => { setSpeechNotice(""); setStatus("speaking"); }).catch(() => { setStatus("idle"); setSpeechNotice(fromTap ? "Audio playback was blocked by this browser." : "Spoken reply is ready—tap play to hear it."); });
   }
 
   async function execute(action: Pending) {
@@ -98,7 +99,8 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
     {turn && <div className="voice-turn"><span>Heard: {turn.transcript}</span><strong>{turn.reply}</strong><small>Guided by deterministic synthetic case rules.</small></div>}
     {pending && <div className="voice-confirm"><strong>Confirm fictional action</strong><span>{pending.proposedAction.replaceAll("_", " ")}</span><button className="button primary" type="button" onClick={() => void confirm()}><Send size={15} /> Yes, continue</button><button className="link-button" type="button" onClick={() => setPending(null)}>Keep reviewing</button></div>}
     {error && <p className="voice-error" role="alert">{error}</p>}
-    <div className="voice-actions">{status === "listening" ? <button className="button primary" type="button" onClick={stop}><Pause size={16} /> {label}</button> : status === "speaking" ? <button className="button secondary" type="button" onClick={stopSpeaking}><X size={16} /> {label}</button> : <button className="button primary" type="button" disabled={status === "thinking"} onClick={() => void start()}><Mic size={17} /> {label}</button>}{turn?.audioBase64 && status !== "speaking" && <button className="icon-button" type="button" onClick={() => play(turn)} aria-label="Replay guide response"><Play size={16} /></button>}</div>
+    {speechNotice && <p className="voice-speech-note" role="status">{speechNotice}</p>}
+    <div className="voice-actions">{status === "listening" ? <button className="button primary" type="button" onClick={stop}><Pause size={16} /> {label}</button> : status === "speaking" ? <button className="button secondary" type="button" onClick={stopSpeaking}><X size={16} /> {label}</button> : <button className="button primary" type="button" disabled={status === "thinking"} onClick={() => void start()}><Mic size={17} /> {label}</button>}{turn?.audioBase64 && status !== "speaking" && <button className="icon-button" type="button" onClick={() => play(turn, true)} aria-label="Play spoken guide reply"><Play size={16} /></button>}</div>
     <small className="voice-examples">Try: “What is the issue?” · “Show the diagnosis” · “Submit this”</small>
   </aside>;
 }

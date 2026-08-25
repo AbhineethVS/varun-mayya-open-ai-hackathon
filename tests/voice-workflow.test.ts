@@ -29,6 +29,13 @@ describe("voice guide guardrails", () => {
     expect(turn.proposedAction).toBe("prepare_submission");
     expect(turn.requiresConfirmation).toBe(true);
   });
+
+  it("answers a question about the issue without navigating away from the current page", () => {
+    const diagnosed = applyWorkflowAction(createDemoCase(), "diagnose");
+    const turn = createVoiceTurn("What is the issue?", "en", diagnosed);
+    expect(turn.proposedAction).toBe("explain");
+    expect(turn.reply).toContain("₹18,500");
+  });
 });
 
 describe("shared workflow endpoint rules", () => {

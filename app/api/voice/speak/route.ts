@@ -14,5 +14,6 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid voice reply." }, { status: 400 });
   const audioBase64 = await synthesizeVoice(parsed.data.text, parsed.data.locale);
+  if (!audioBase64) return NextResponse.json({ error: "Spoken reply is temporarily unavailable. The written reply is still ready." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json({ audioBase64, audioMimeType: audioBase64 ? "audio/wav" : null }, { headers: { "Cache-Control": "no-store" } });
 }
