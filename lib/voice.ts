@@ -107,17 +107,27 @@ export async function createVoiceTurn(transcript: string, locale: Locale, caseDa
 
 export async function transcribeVoice(audio: File) {
   if (!process.env.SARVAM_API_KEY) throw new Error("Voice service is not configured.");
+  // Android Chrome labels MediaRecorder output as `audio/webm;codecs=opus`.
+  // Sarvam validates the multipart MIME type strictly, so retain the bytes but
+  // remove browser-only codec parameters before forwarding the file.
+  const uploadType = supportedUploadType(audio.type);
+  const upload = new Blob([await audio.arrayBuffer()], { type: uploadType });
   const form = new FormData();
-  form.append("file", audio, "voice.webm"); form.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3"); form.append("mode", "transcribe");
+  form.append("file", upload, "voice.webm"); form.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3"); form.append("mode", "transcribe");
   const response = await fetch("https://api.sarvam.ai/speech-to-text", { method: "POST", headers: { "api-subscription-key": process.env.SARVAM_API_KEY }, body: form, signal: AbortSignal.timeout(20_000) });
   const body = await response.text();
   if (!response.ok) {
-    console.error("EPFO Resolve Sarvam transcription rejected", { status: response.status, audioBytes: audio.size, audioType: audio.type, detail: body.slice(0, 500) });
+    console.error("EPFO Resolve Sarvam transcription rejected", { status: response.status, audioBytes: audio.size, audioType: audio.type, uploadType, detail: body.slice(0, 500) });
     throw new Error(`Sarvam transcription ${response.status}`);
   }
   const payload = JSON.parse(body) as { transcript?: string };
   if (!payload.transcript?.trim()) throw new Error("No speech was detected.");
   return payload.transcript.trim();
+}
+
+export function supportedUploadType(audioType: string) {
+  const mimeType = audioType.split(";", 1)[0].trim().toLowerCase();
+  return mimeType === "audio/webm" || mimeType === "video/webm" ? mimeType : "audio/webm";
 }
 
 export async function synthesizeVoice(text: string, locale: Locale) {

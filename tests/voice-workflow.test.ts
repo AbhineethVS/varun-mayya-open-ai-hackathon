@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDemoCase } from "../lib/domain";
-import { allowedVoiceActions, isVoiceConfirmation, VOICE_LOCALES } from "../lib/voice";
+import { allowedVoiceActions, isVoiceConfirmation, supportedUploadType, VOICE_LOCALES } from "../lib/voice";
 import { applyWorkflowAction } from "../lib/workflow";
 
 describe("voice guide guardrails", () => {
@@ -17,6 +17,10 @@ describe("voice guide guardrails", () => {
     expect(isVoiceConfirmation("Yes, continue")).toBe(true);
     expect(isVoiceConfirmation("हाँ जी")).toBe(true);
     expect(isVoiceConfirmation("Can you explain this?")).toBe(false);
+  });
+
+  it("removes browser-only codec parameters before sending WebM to Sarvam", () => {
+    expect(supportedUploadType("audio/webm;codecs=opus")).toBe("audio/webm");
   });
 });
 
