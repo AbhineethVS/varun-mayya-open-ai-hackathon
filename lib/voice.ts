@@ -108,10 +108,14 @@ export async function createVoiceTurn(transcript: string, locale: Locale, caseDa
 export async function transcribeVoice(audio: File) {
   if (!process.env.SARVAM_API_KEY) throw new Error("Voice service is not configured.");
   const form = new FormData();
-  form.set("file", audio, "voice.webm"); form.set("model", process.env.SARVAM_STT_MODEL || "saaras:v3"); form.set("mode", "transcribe"); form.set("language_code", "unknown");
+  form.append("file", audio, "voice.webm"); form.append("model", process.env.SARVAM_STT_MODEL || "saaras:v3"); form.append("mode", "transcribe");
   const response = await fetch("https://api.sarvam.ai/speech-to-text", { method: "POST", headers: { "api-subscription-key": process.env.SARVAM_API_KEY }, body: form, signal: AbortSignal.timeout(20_000) });
-  if (!response.ok) throw new Error(`Sarvam transcription ${response.status}`);
-  const payload = await response.json() as { transcript?: string };
+  const body = await response.text();
+  if (!response.ok) {
+    console.error("EPFO Resolve Sarvam transcription rejected", { status: response.status, audioBytes: audio.size, audioType: audio.type, detail: body.slice(0, 500) });
+    throw new Error(`Sarvam transcription ${response.status}`);
+  }
+  const payload = JSON.parse(body) as { transcript?: string };
   if (!payload.transcript?.trim()) throw new Error("No speech was detected.");
   return payload.transcript.trim();
 }

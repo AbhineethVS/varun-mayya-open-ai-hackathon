@@ -17,6 +17,7 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
   const [error, setError] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const startedAt = useRef(0);
   const stopTimer = useRef<number | null>(null);
   const player = useRef<HTMLAudioElement | null>(null);
 
@@ -31,8 +32,13 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
       recorder.current = mediaRecorder; chunks.current = [];
       mediaRecorder.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data); };
-      mediaRecorder.onstop = () => { stream.getTracks().forEach((track) => track.stop()); void send(new Blob(chunks.current, { type: mimeType })); };
-      mediaRecorder.start(); setStatus("listening"); onAnnouncement("Voice guide is listening. Tap stop when you finish speaking.");
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const recording = new Blob(chunks.current, { type: mimeType });
+        if (Date.now() - startedAt.current < 600 || recording.size < 1_000) { setError("That recording was too short to capture speech. Hold the microphone for at least a second, then try again."); setStatus("error"); return; }
+        void send(recording);
+      };
+      startedAt.current = Date.now(); mediaRecorder.start(250); setStatus("listening"); onAnnouncement("Voice guide is listening. Tap stop when you finish speaking.");
       stopTimer.current = window.setTimeout(() => stop(), 15_000);
     } catch {
       setError("Microphone permission was not granted. You can continue with the normal controls."); setStatus("error");
