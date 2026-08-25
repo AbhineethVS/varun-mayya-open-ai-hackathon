@@ -18,7 +18,7 @@ Open `http://localhost:3000`, then use the displayed fictional UAN and OTP. Neve
 
 ## Production configuration
 
-Copy `.env.example` to `.env.local`. Add `OPENAI_API_KEY` to enable live optional AI text; otherwise the safe deterministic fallback is used. Add `SARVAM_API_KEY` to enable the push-to-talk guide: it sends a short browser-recorded WebM clip to Sarvam for transcription, asks the case-aware model for a constrained reply, and returns optional speech. Audio and transcripts are never persisted by EPFO Resolve. The guide requires explicit confirmation before any synthetic mutation, and it never reaches real EPFO systems.
+Copy `.env.example` to `.env.local`. Add `OPENAI_API_KEY` to enable live optional AI text; otherwise the safe deterministic fallback is used. Add `SARVAM_API_KEY` to enable the push-to-talk guide: it sends a short browser-recorded WebM clip to Sarvam for transcription, resolves a page-aware response and permitted workflow plan locally, then returns optional Sarvam speech separately. There is no chat-model request in this voice path. Audio and transcripts are never persisted by EPFO Resolve. The guide requires explicit confirmation before any synthetic mutation, and it never reaches real EPFO systems.
 
 Add the public Supabase URL and anon key, enable Anonymous Sign-Ins, and apply `supabase/migrations/001_epfo_resolve.sql` to make each mock-login session private and durable. The app deliberately works without credentials so reviewers can always complete the synthetic journey locally. Optionally set `NEXT_PUBLIC_SITE_URL` when deploying to a custom domain; it defaults to `https://epfo-resolve.vercel.app`.
 

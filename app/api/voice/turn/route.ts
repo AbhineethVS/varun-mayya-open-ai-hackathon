@@ -3,7 +3,7 @@ import { z } from "zod";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getRequestSession } from "@/lib/request-session";
 import { demoCaseSchema } from "@/lib/workflow";
-import { createVoiceTurn, isVoiceConfirmation, synthesizeVoice, transcribeVoice, voiceIntentSchema } from "@/lib/voice";
+import { createVoiceTurn, isVoiceConfirmation, transcribeVoice, voiceIntentSchema } from "@/lib/voice";
 
 export const runtime = "nodejs";
 const localeSchema = z.enum(["en", "hi", "bn", "gu", "kn", "mr", "ta", "te"]);
@@ -26,9 +26,8 @@ export async function POST(request: Request) {
     const confirmed = pendingAction.data !== "clarify" && isVoiceConfirmation(transcript);
     const turn = confirmed
       ? { reply: "Confirmed. I will continue with the fictional demo action now.", proposedAction: pendingAction.data, evidenceIds: [], replyLocale: selectedLocale, source: "live" as const, requiresConfirmation: false }
-      : await createVoiceTurn(transcript, selectedLocale, caseData.data);
-    const audioBase64 = await synthesizeVoice(turn.reply, turn.replyLocale ?? selectedLocale);
-    return NextResponse.json({ transcript, ...turn, audioBase64, audioMimeType: audioBase64 ? "audio/wav" : null, confirmed }, { headers: { "Cache-Control": "no-store" } });
+      : createVoiceTurn(transcript, selectedLocale, caseData.data);
+    return NextResponse.json({ transcript, ...turn, audioBase64: null, audioMimeType: null, confirmed }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "We could not process that voice request." }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }

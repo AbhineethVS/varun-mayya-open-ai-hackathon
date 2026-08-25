@@ -1,20 +1,14 @@
 import { z } from "zod";
-import { DemoCase, EVIDENCE, EvidenceId, REQUIRED_EVIDENCE } from "./domain";
+import { DemoCase, EvidenceId, REQUIRED_EVIDENCE } from "./domain";
 import { Locale } from "./locales";
 
 export const VOICE_LOCALES: Record<Locale, string> = { en: "en-IN", hi: "hi-IN", bn: "bn-IN", gu: "gu-IN", kn: "kn-IN", mr: "mr-IN", ta: "ta-IN", te: "te-IN" };
-export const voiceIntentSchema = z.enum(["explain", "diagnose", "select_evidence", "submit", "simulate_deadline", "escalate", "reconcile", "complete", "download", "change_locale", "clarify"]);
+export const voiceIntentSchema = z.enum(["explain", "diagnose", "select_evidence", "prepare_submission", "submit", "simulate_deadline", "escalate", "reconcile", "complete", "download", "change_locale", "clarify"]);
 export type VoiceIntent = z.infer<typeof voiceIntentSchema>;
 export type VoiceAction = Exclude<VoiceIntent, "explain" | "clarify" | "change_locale">;
 
-const responseSchema = z.object({
-  reply: z.string().min(1).max(900),
-  proposedAction: voiceIntentSchema,
-  evidenceIds: z.array(z.enum(["appointment", "payslips", "service", "passbook", "form3a", "email"])).max(6).default([]),
-  replyLocale: z.enum(["en", "hi", "bn", "gu", "kn", "mr", "ta", "te"]).optional(),
-});
-
-export type VoiceTurn = z.infer<typeof responseSchema> & { source: "live" | "fallback"; requiresConfirmation: boolean };
+export type VoiceIntentWithPlan = VoiceIntent;
+export type VoiceTurn = { reply: string; proposedAction: VoiceIntent; evidenceIds: EvidenceId[]; replyLocale: Locale; source: "deterministic"; requiresConfirmation: boolean };
 
 const actionForStatus: Record<DemoCase["status"], VoiceIntent[]> = {
   transfer_failed: ["explain", "diagnose", "clarify", "change_locale"],
@@ -28,26 +22,29 @@ const actionForStatus: Record<DemoCase["status"], VoiceIntent[]> = {
 };
 
 export function allowedVoiceActions(caseData: DemoCase) { return actionForStatus[caseData.status]; }
-export function requiresVoiceConfirmation(action: VoiceIntent) { return !["explain", "diagnose", "clarify", "change_locale"].includes(action); }
+export function requiresVoiceConfirmation(action: VoiceIntentWithPlan) { return !["explain", "diagnose", "clarify", "change_locale"].includes(action); }
 export function isVoiceConfirmation(text: string) { return /^(?:yes|yeah|yep|sure|okay|ok|go ahead|continue|haan|ha)\b|^(?:हाँ|हां|जी हाँ|हाँ जी)(?:\s|$)/i.test(text.trim()); }
 
-function fallbackTurn(transcript: string, locale: Locale, caseData: DemoCase): VoiceTurn {
+export function createVoiceTurn(transcript: string, locale: Locale, caseData: DemoCase): VoiceTurn {
   const text = transcript.toLowerCase();
-  let proposedAction: VoiceIntent = "explain";
+  const requestedLocale = requestedVoiceLocale(text) ?? locale;
+  let proposedAction: VoiceIntentWithPlan = "explain";
   if (/diagnos|show.*issue|what.*wrong|issue/.test(text)) proposedAction = "diagnose";
   else if (/evidence|document|attach|select/.test(text)) proposedAction = "select_evidence";
-  else if (/submit|send.*request/.test(text)) proposedAction = "submit";
+  else if (/submit|send.*request/.test(text)) proposedAction = canSubmit(caseData) ? "submit" : canStartSubmission(caseData) ? "prepare_submission" : "clarify";
   else if (/deadline|overdue|missed/.test(text)) proposedAction = "simulate_deadline";
   else if (/escalat|rpfc/.test(text)) proposedAction = "escalate";
   else if (/reconcil|ledger|balance/.test(text)) proposedAction = "reconcile";
   else if (/complete|transfer/.test(text)) proposedAction = "complete";
   else if (/download|summary|pdf/.test(text)) proposedAction = "download";
   else if (/hindi|bengali|gujarati|kannada|marathi|tamil|telugu|english/.test(text)) proposedAction = "change_locale";
-  if (!allowedVoiceActions(caseData).includes(proposedAction)) proposedAction = "clarify";
+  if (proposedAction !== "prepare_submission" && !allowedVoiceActions(caseData).includes(proposedAction)) proposedAction = "clarify";
   const reply = proposedAction === "diagnose"
     ? "I can open the diagnosis. The synthetic record says EPS was active, even though Ananya’s first membership began after September 2014 with Basic plus DA of ₹18,500 and no earlier EPS membership."
     : proposedAction === "select_evidence"
       ? "The case needs four fictional records: the appointment letter, first three payslips, service history, and old passbook. I can select those for this synthetic request."
+      : proposedAction === "prepare_submission"
+        ? "To submit this fictional request, I will open the diagnosis, select the four required fictional records, and submit the correction request. Would you like me to continue?"
       : proposedAction === "submit"
         ? "I can submit the fictional correction request once the four required synthetic records are selected. Would you like me to continue?"
         : proposedAction === "reconcile"
@@ -61,48 +58,29 @@ function fallbackTurn(transcript: string, locale: Locale, caseData: DemoCase): V
                 : proposedAction === "escalate"
                   ? "I can open the fictional RPFC review with the existing synthetic evidence. This does not create a real grievance. Would you like me to continue?"
                   : proposedAction === "change_locale"
-                    ? "I can change the interface language when you name one of the eight supported languages."
-                    : "This is a synthetic case guide, not an EPFO officer. Ask what the issue is, ask me to show the diagnosis, select evidence, or guide you to the next fictional step.";
-  return { reply, proposedAction, evidenceIds: proposedAction === "select_evidence" ? REQUIRED_EVIDENCE : [], replyLocale: locale, source: "fallback", requiresConfirmation: requiresVoiceConfirmation(proposedAction) };
+                    ? `I will use ${requestedLocale === "en" ? "English" : requestedLocale === "hi" ? "Hindi" : requestedLocale === "bn" ? "Bengali" : requestedLocale === "gu" ? "Gujarati" : requestedLocale === "kn" ? "Kannada" : requestedLocale === "mr" ? "Marathi" : requestedLocale === "ta" ? "Tamil" : "Telugu"} for the interface and spoken guide.`
+                    : "This is a synthetic case guide, not an EPFO officer. Ask what the issue is, ask me to show the diagnosis, select evidence, submit the fictional request, or guide you to the next step.";
+  return { reply, proposedAction, evidenceIds: proposedAction === "select_evidence" || proposedAction === "prepare_submission" ? REQUIRED_EVIDENCE : [], replyLocale: requestedLocale, source: "deterministic", requiresConfirmation: requiresVoiceConfirmation(proposedAction) };
 }
 
-function caseContext(caseData: DemoCase) {
-  return {
-    status: caseData.status,
-    selectedEvidence: caseData.selectedEvidence,
-    permittedActions: allowedVoiceActions(caseData),
-    facts: "Synthetic Ananya Rao case only: first EPF membership 04 Jan 2017; Basic + DA ₹18,500; no prior EPS membership; old employer incorrectly recorded EPS active; ₹48,200 is reclassified from EPS to EPF; total stays ₹9,84,320.",
-    evidence: EVIDENCE.map((item) => ({ id: item.id, title: item.title, required: item.required })),
-  };
+function canSubmit(caseData: DemoCase) {
+  return caseData.status === "evidence_ready" && REQUIRED_EVIDENCE.every((id) => caseData.selectedEvidence.includes(id));
 }
 
-export async function createVoiceTurn(transcript: string, locale: Locale, caseData: DemoCase): Promise<VoiceTurn> {
-  if (!process.env.SARVAM_API_KEY) return fallbackTurn(transcript, locale, caseData);
-  try {
-    const response = await fetch("https://api.sarvam.ai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "api-subscription-key": process.env.SARVAM_API_KEY },
-      body: JSON.stringify({
-        model: process.env.SARVAM_CHAT_MODEL || "sarvam-105b-conversations",
-        temperature: 0.2, reasoning_effort: null, max_tokens: 260,
-        response_format: { type: "json_schema", json_schema: { name: "epfo_resolve_voice_turn", strict: true, schema: { type: "object", properties: { reply: { type: "string" }, proposedAction: { type: "string", enum: voiceIntentSchema.options }, evidenceIds: { type: "array", items: { type: "string", enum: EVIDENCE.map((item) => item.id) } }, replyLocale: { type: "string", enum: ["en", "hi", "bn", "gu", "kn", "mr", "ta", "te"] } }, required: ["reply", "proposedAction", "evidenceIds"], additionalProperties: false } } },
-        messages: [
-          { role: "system", content: "You are EPFO Resolve's synthetic case guide. Never claim to be EPFO or an officer. Use only the supplied synthetic facts. Do not give legal advice, invent rules, calculate different amounts, claim a real submission, or mention unseen data. Reply briefly in the selected UI language unless the user explicitly asks to change it. You may propose only a permitted action. Actions other than explain, diagnose, clarify, or change_locale always require confirmation." },
-          { role: "user", content: JSON.stringify({ userUtterance: transcript, uiLocale: locale, case: caseContext(caseData) }) },
-        ],
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error(`Sarvam chat ${response.status}`);
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = payload.choices?.[0]?.message?.content;
-    const parsed = responseSchema.safeParse(content ? JSON.parse(content) : null);
-    if (!parsed.success || !allowedVoiceActions(caseData).includes(parsed.data.proposedAction)) throw new Error("Invalid voice response");
-    return { ...parsed.data, evidenceIds: parsed.data.evidenceIds.filter((id) => EVIDENCE.some((item) => item.id === id)), replyLocale: parsed.data.replyLocale ?? locale, source: "live", requiresConfirmation: requiresVoiceConfirmation(parsed.data.proposedAction) };
-  } catch (error) {
-    console.error("EPFO Resolve Sarvam voice request failed", { message: error instanceof Error ? error.message : "Unknown provider error" });
-    return fallbackTurn(transcript, locale, caseData);
-  }
+function canStartSubmission(caseData: DemoCase) {
+  return caseData.status === "transfer_failed" || caseData.status === "diagnosed" || caseData.status === "evidence_ready";
+}
+
+function requestedVoiceLocale(text: string): Locale | null {
+  if (/hindi|हिंदी|हिन्दी/.test(text)) return "hi";
+  if (/bengali|বাংলা/.test(text)) return "bn";
+  if (/gujarati|ગુજરાતી/.test(text)) return "gu";
+  if (/kannada|ಕನ್ನಡ/.test(text)) return "kn";
+  if (/marathi|मराठी/.test(text)) return "mr";
+  if (/tamil|தமிழ்/.test(text)) return "ta";
+  if (/telugu|తెలుగు/.test(text)) return "te";
+  if (/english/.test(text)) return "en";
+  return null;
 }
 
 export async function transcribeVoice(audio: File) {

@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Pause, Play, Send, Volume2, X } from "lucide-react";
 import { DemoCase, EvidenceId } from "@/lib/domain";
 import { Locale } from "@/lib/locales";
-import { VoiceIntent } from "@/lib/voice";
+import { VoiceIntentWithPlan } from "@/lib/voice";
 import { WorkflowAction } from "@/lib/workflow";
 
-type Turn = { transcript: string; reply: string; proposedAction: VoiceIntent; evidenceIds: EvidenceId[]; replyLocale: Locale; source: "live" | "fallback"; requiresConfirmation: boolean; audioBase64: string | null; audioMimeType: string | null; confirmed: boolean };
+type Turn = { transcript: string; reply: string; proposedAction: VoiceIntentWithPlan; evidenceIds: EvidenceId[]; replyLocale: Locale; source: "deterministic"; requiresConfirmation: boolean; audioBase64: string | null; audioMimeType: string | null; confirmed: boolean };
 type Pending = Pick<Turn, "proposedAction" | "evidenceIds" | "reply">;
 
 export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLocale, onDownload, onAnnouncement }: { locale: Locale; caseData: DemoCase; requestHeaders: () => Promise<Record<string, string>>; onWorkflow: (action: WorkflowAction, evidenceIds?: EvidenceId[]) => Promise<boolean>; onLocale: (locale: Locale) => void; onDownload: () => Promise<void>; onAnnouncement: (message: string) => void }) {
@@ -56,12 +56,22 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
       const payload = await response.json() as Turn & { error?: string };
       if (!response.ok) throw new Error(payload.error || "Voice guide is unavailable.");
       setTurn(payload); onAnnouncement(payload.reply);
-      if (payload.confirmed && pending) { const accepted = await execute(pending); if (accepted) setPending(null); return; }
+      if (payload.confirmed && pending) { const accepted = await execute(pending); if (accepted) setPending(null); setStatus("idle"); void requestSpeech(payload.reply, payload.replyLocale); return; }
       if (payload.proposedAction === "change_locale" && payload.replyLocale !== locale) onLocale(payload.replyLocale);
       if (payload.proposedAction === "diagnose") await execute({ proposedAction: "diagnose", evidenceIds: [], reply: payload.reply });
       else if (payload.requiresConfirmation) setPending({ proposedAction: payload.proposedAction, evidenceIds: payload.evidenceIds, reply: payload.reply });
-      play(payload);
+      setStatus("idle"); void requestSpeech(payload.reply, payload.replyLocale);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Voice guide is unavailable."); setStatus("error"); }
+  }
+
+  async function requestSpeech(text: string, replyLocale: Locale) {
+    try {
+      const response = await fetch("/api/voice/speak", { method: "POST", headers: await requestHeaders(), body: JSON.stringify({ text, locale: replyLocale }) });
+      const speech = await response.json() as Pick<Turn, "audioBase64" | "audioMimeType">;
+      if (!response.ok || !speech.audioBase64) return;
+      setTurn((previous) => previous ? { ...previous, ...speech } : previous);
+      play(speech);
+    } catch { /* Text remains available even when optional speech generation fails. */ }
   }
 
   function play(payload: Pick<Turn, "audioBase64" | "audioMimeType">) {
@@ -72,7 +82,7 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
 
   async function execute(action: Pending) {
     if (action.proposedAction === "download") { await onDownload(); return true; }
-    const map: Partial<Record<VoiceIntent, WorkflowAction>> = { diagnose: "diagnose", select_evidence: "select_evidence", submit: "submit", simulate_deadline: "expire", escalate: "escalate", reconcile: "reconcile", complete: "complete" };
+    const map: Partial<Record<VoiceIntentWithPlan, WorkflowAction>> = { diagnose: "diagnose", select_evidence: "select_evidence", prepare_submission: "prepare_submit", submit: "submit", simulate_deadline: "expire", escalate: "escalate", reconcile: "reconcile", complete: "complete" };
     const workflowAction = map[action.proposedAction];
     if (!workflowAction) return false;
     return onWorkflow(workflowAction, action.evidenceIds);
@@ -85,7 +95,7 @@ export function VoiceGuide({ locale, caseData, requestHeaders, onWorkflow, onLoc
   return <aside className="voice-guide" aria-label="Synthetic voice case guide">
     <div className="voice-guide-header"><div><span className="mini-label">Optional voice guide</span><strong>Synthetic case guide</strong></div><Volume2 size={19} /></div>
     <p>Ask naturally about this fictional case. Nothing you say or record is saved.</p>
-    {turn && <div className="voice-turn"><span>Heard: {turn.transcript}</span><strong>{turn.reply}</strong>{turn.source === "fallback" && <small>Safe local guidance is shown while the live guide is unavailable.</small>}</div>}
+    {turn && <div className="voice-turn"><span>Heard: {turn.transcript}</span><strong>{turn.reply}</strong><small>Guided by deterministic synthetic case rules.</small></div>}
     {pending && <div className="voice-confirm"><strong>Confirm fictional action</strong><span>{pending.proposedAction.replaceAll("_", " ")}</span><button className="button primary" type="button" onClick={() => void confirm()}><Send size={15} /> Yes, continue</button><button className="link-button" type="button" onClick={() => setPending(null)}>Keep reviewing</button></div>}
     {error && <p className="voice-error" role="alert">{error}</p>}
     <div className="voice-actions">{status === "listening" ? <button className="button primary" type="button" onClick={stop}><Pause size={16} /> {label}</button> : status === "speaking" ? <button className="button secondary" type="button" onClick={stopSpeaking}><X size={16} /> {label}</button> : <button className="button primary" type="button" disabled={status === "thinking"} onClick={() => void start()}><Mic size={17} /> {label}</button>}{turn?.audioBase64 && status !== "speaking" && <button className="icon-button" type="button" onClick={() => play(turn)} aria-label="Replay guide response"><Play size={16} /></button>}</div>
