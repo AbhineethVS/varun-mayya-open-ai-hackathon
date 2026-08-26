@@ -8,7 +8,7 @@ import { copy, Locale, locales } from "@/lib/locales";
 import { bootstrapCase, persistAiArtifact, persistCase } from "@/lib/case-persistence";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { WorkflowAction } from "@/lib/workflow";
-import { VoiceGuide } from "@/components/voice-guide";
+import { AssistantPanel } from "@/components/assistant-panel";
 
 const STORAGE_KEY = "epfo-resolve-case-v1";
 const DEMO_UAN = "1000 2000 3000";
@@ -56,6 +56,7 @@ export function DemoClient() {
   const [remoteCaseId, setRemoteCaseId] = useState<string | null>(null);
   const [persistence, setPersistence] = useState<"local" | "syncing" | "cloud" | "offline">("local");
   const [announcement, setAnnouncement] = useState("The fictional Ananya Rao case is ready to review.");
+  const [assistantCollapsed, setAssistantCollapsed] = useState(false);
   const t = copy[locale];
 
   useEffect(() => {
@@ -242,7 +243,7 @@ export function DemoClient() {
     {menuOpen && <div className="menu-popover"><LocalePicker locale={locale} setLocale={setLocale} compact /><button type="button" onClick={reset}><RefreshCcw size={15} /> {t.reset}</button></div>}
     <div className="prototype-banner"><ShieldCheck size={16} /><span>{t.notOfficial}. All records and actions below are fictional.</span></div>
     <div className="progress-wrap" aria-label={`Case progress: stage ${stage} of 5`}><div className="progress-meta"><span>Case journey · stage {stage} of 5</span><span>{progress}%</span></div><div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div><p className="next-step"><strong>Next:</strong> {nextStep(caseData.status)}</p></div>
-    <div className="app-content">
+    <div className={assistantCollapsed ? "app-content assistant-collapsed" : "app-content"}>
       <aside className="side-rail"><CaseIdentity /><nav className="side-nav" aria-label="Case journey"><NavItem label="Transfer" active /><NavItem label="Diagnosis" active={statusIndex >= 1} /><NavItem label="Evidence" active={statusIndex >= 2} /><NavItem label="Resolution" active={statusIndex >= 5} /></nav><button className="text-button" type="button" onClick={reset}><RefreshCcw size={15} /> {t.reset}</button></aside>
       <section className="main-panel panel-enter" key={caseData.status} aria-label="Current case step">
         {caseData.status === "transfer_failed" && <Dashboard t={t} onContinue={() => void transition("diagnose")} />}
@@ -254,9 +255,9 @@ export function DemoClient() {
         {caseData.status === "reconciled" && <Success t={t} caseData={caseData} onComplete={() => void transition("complete")} onDownload={downloadSummary} downloadBusy={downloadBusy} />}
         {caseData.status === "transfer_completed" && <Success t={t} caseData={caseData} complete onDownload={downloadSummary} downloadBusy={downloadBusy} />}
       </section>
+      <AssistantPanel locale={locale} caseData={caseData} requestHeaders={requestHeaders} collapsed={assistantCollapsed} onToggle={() => setAssistantCollapsed((previous) => !previous)} />
     </div>
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
-    <VoiceGuide locale={locale} caseData={caseData} requestHeaders={requestHeaders} onWorkflow={transition} onLocale={setLocale} onDownload={downloadSummary} onAnnouncement={setAnnouncement} />
     {docPreview && <DocumentPreview item={EVIDENCE.find((item) => item.id === docPreview)!} close={() => setDocPreview(null)} />}
     {confirmAction && <ConfirmationDialog label={confirmAction.label} description={confirmAction.description} onCancel={() => setConfirmAction(null)} onConfirm={() => { confirmAction.action(); setConfirmAction(null); }} />}
   </main>;

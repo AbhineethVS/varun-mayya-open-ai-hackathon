@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DemoCase, EVIDENCE, EvidenceId, hasRequiredEvidence, nextStatus, REQUIRED_EVIDENCE, TimelineEvent } from "./domain";
+import { DemoCase, EVIDENCE, EvidenceId, hasRequiredEvidence, nextStatus, TimelineEvent } from "./domain";
 
 export const evidenceIdSchema = z.enum(["appointment", "payslips", "service", "passbook", "form3a", "email"]);
 export const caseStatusSchema = z.enum(["transfer_failed", "diagnosed", "evidence_ready", "correction_submitted", "employer_overdue", "escalated", "reconciled", "transfer_completed"]);
@@ -13,7 +13,7 @@ export const demoCaseSchema = z.object({
   locale: z.string(), submittedAt: z.string().optional(), events: z.array(timelineEventSchema),
 });
 
-export const workflowActionSchema = z.enum(["diagnose", "save_evidence", "select_evidence", "prepare_submit", "submit", "expire", "escalate", "reconcile", "complete"]);
+export const workflowActionSchema = z.enum(["diagnose", "save_evidence", "select_evidence", "submit", "expire", "escalate", "reconcile", "complete"]);
 export type WorkflowAction = z.infer<typeof workflowActionSchema>;
 
 const events: Partial<Record<WorkflowAction, TimelineEvent>> = {
@@ -31,14 +31,6 @@ function event(id: string, title: string, description: string, actor: TimelineEv
 }
 
 export function applyWorkflowAction(caseData: DemoCase, action: WorkflowAction, evidenceIds?: EvidenceId[]): DemoCase {
-  if (action === "prepare_submit") {
-    let prepared = caseData;
-    if (prepared.status === "transfer_failed") prepared = applyWorkflowAction(prepared, "diagnose");
-    if (prepared.status === "diagnosed") prepared = applyWorkflowAction(prepared, "save_evidence");
-    if (prepared.status === "evidence_ready") prepared = applyWorkflowAction(prepared, "select_evidence", evidenceIds?.length ? evidenceIds : REQUIRED_EVIDENCE);
-    if (prepared.status === "evidence_ready") return applyWorkflowAction(prepared, "submit");
-    throw new Error("The fictional correction request is already beyond the submission stage.");
-  }
   if (action === "select_evidence") {
     if (caseData.status !== "evidence_ready" && caseData.status !== "diagnosed") throw new Error("Evidence can only be selected during the evidence step.");
     const selectedEvidence = [...new Set(evidenceIds ?? [])].filter((id) => EVIDENCE.some((item) => item.id === id));
